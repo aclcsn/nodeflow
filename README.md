@@ -15,10 +15,14 @@ outputs rather than reading and writing files directly.
 - **Visual canvas.** You assemble a workflow by adding nodes and connecting their ports.
 - **Nodes are notebooks.** Each node runs a notebook with [Papermill]. Notebooks can be edited
   inside the application.
+- **File inputs.** Upload CSV and SQL or text files; each becomes a source node you can wire
+  into the workflow.
+- **Node management.** Add, rename, and remove nodes directly on the canvas.
 - **Caching.** A node is re-run only when its code, parameters, or inputs change; otherwise its
   previous result is reused.
-- **Built-in templates.** A starter set is provided: Import CSV, Data Cleaning, Split Data,
-  Logistic Regression, Random Forest, XGBoost, SHAP, Evaluation, and Report.
+- **Built-in templates.** A starter set covers data loading, cleaning, splitting, model training
+  (Logistic Regression, Random Forest, XGBoost), SHAP, evaluation, reporting, and a
+  column-metadata helper.
 - **Output previews.** Tables, figures, metrics, and HTML reports can be viewed within the
   application.
 - **Major nodes.** A group of nodes can be collapsed into a single container node and expanded
@@ -35,41 +39,56 @@ outputs rather than reading and writing files directly.
 
 ## Installation
 
-### 1. Obtain the code
+### Quick start (macOS)
+
+Two scripts sit at the top of the project folder:
+
+1. **install.command** — creates a virtual environment, installs NodeFlow and its dependencies,
+   and registers the notebook kernel.
+2. **start.command** — launches NodeFlow.
+
+Double-click **install.command** in Finder and wait for it to finish, then double-click
+**start.command** to open the application. You can also run them from a terminal:
+
+```bash
+./install.command   # first-time setup, and again after updating the code
+./start.command     # launches NodeFlow
+```
+
+The first time you open a script, macOS may ask you to confirm; choose Open. If a script is not
+marked executable, run `chmod +x install.command start.command` once.
+
+### Manual installation (any platform)
+
+To install by hand, or on Windows or Linux:
+
+1. Obtain the code:
 ```bash
 git clone https://github.com/aclcsn/nodeflow.git
 cd nodeflow
 ```
-
-### 2. Create and activate a virtual environment
+2. Create and activate a virtual environment.
 
 macOS / Linux:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
-
 Windows (PowerShell):
 ```powershell
 py -3 -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
-
-### 3. Install the package
+3. Install the package:
 ```bash
 pip install --upgrade pip
 pip install -e ".[gui,dev]"
 ```
-
-### 4. Register the notebook kernel
-Each node runs in a Jupyter kernel that must be able to import NodeFlow. With the virtual
-environment active, register a kernel that points at it. Do not skip this step; without it,
-nodes will fail to run.
+4. Register the notebook kernel. Do not skip this step; without it, nodes will not run.
 ```bash
 python -m ipykernel install --sys-prefix --name nodeflow --display-name "NodeFlow (venv)"
 ```
-
-### 5. Confirm the installation
+5. Confirm the installation:
 ```bash
 nodeflow --version
 ```
@@ -82,8 +101,9 @@ nodeflow --version
 nodeflow
 ```
 
-NodeFlow treats the directory you launch it from as your project. It keeps node notebooks in a
-`notebooks/` folder and node specifications in a `specs/` folder within that directory.
+NodeFlow treats the directory you launch it from as your project. Within that directory it keeps
+node notebooks in a `notebooks/` folder, node specifications in a `specs/` folder, and uploaded
+files in a `files/` folder.
 
 ---
 
@@ -96,19 +116,21 @@ blank one, or browse for a file.
 ![Startup chooser](docs/images/feature_chooser.png)
 
 ### The window
-The interface is divided into four areas.
+The interface is divided into four areas. The library on the left has two parts: the
+**Notebook Library** of node types and a **Files** section for files you upload.
 
-![The NodeFlow window](docs/images/gui_final.png)
+![The NodeFlow window](docs/images/feature_files_and_buttons.png)
 
 | Area | Purpose |
 |------|---------|
-| **Library** (left) | The node types available to add, grouped by category. |
+| **Library** (left) | The node types available to add, grouped by category, plus the Files section. |
 | **Canvas** (centre) | Your workflow: the nodes and the connections between them. |
 | **Inspector** (right) | The selected node's **Properties** (parameters) and **Outputs** (previews). |
 | **Logs** (bottom) | Messages produced while building and running the workflow. |
 
 ### Building and running a workflow
-1. **Add a node.** Double-click a node type in the Library, for example *Import CSV*.
+1. **Add a node.** Double-click a node type in the Library, or press its **+** button. Each entry
+   also has a **…** button to edit its notebook template before adding it.
 2. **Connect nodes.** Drag from a node's output port to another node's input port. A connection
    is permitted only when the two port types match.
 3. **Set parameters.** Select a node and edit its values in the Properties tab.
@@ -118,6 +140,19 @@ The interface is divided into four areas.
    report.
 
 Use **File ▸ Save Workflow** to store the board as a `workflow.json` file.
+
+### Managing nodes
+- **Rename** a node: right-click it and choose **Rename**, or use **Node ▸ Rename**. The display
+  name changes while the node keeps its identity.
+- **Remove** a node: press the **✕** button on the node, press **Delete** or **Backspace** while
+  it is selected, or right-click and choose **Delete**. Its connections are removed with it.
+
+### Adding your own files
+Press the **+** button in the Files section, right-click in the Files section and choose
+**Upload a file**, or use **File ▸ Upload a File**. Your file browser opens and you can select one
+or more files. Each file is copied into the project's `files/` folder and added to the canvas as a
+source node: a `.csv` file produces a table output, and a `.sql` or other text file produces a
+text output. You can then connect it to other nodes.
 
 ---
 
@@ -213,28 +248,56 @@ stored on disk:
 Parameters declare one of these types: `int`, `float`, `str`, `bool`, or `choice` (which also
 takes a `choices` list of allowed values).
 
+### Reusable column metadata
+Sometimes the same field has a different column name in each dataset, yet downstream notebooks
+should treat it the same way. The built-in **Define Columns** node (in the *Metadata* category)
+handles this. It outputs a dictionary that maps roles to the actual column names:
+
+```python
+# notebooks/define_columns.ipynb
+from nodeflow import outputs, params
+
+columns = {"target": params.target_col}
+if params.time_col:
+    columns["time"] = params.time_col
+outputs.columns = columns
+```
+
+A downstream node reads that dictionary and refers to columns by role rather than by literal name:
+
+```python
+from nodeflow import inputs
+
+df  = inputs.data
+col = inputs.columns          # e.g. {"target": "y", "time": "ts"}
+y   = df[col["target"]]       # train(df, target=col["target"]), etc.
+```
+
+Connect the `columns` output of Define Columns to a `columns` input on your node. This uses the
+ordinary `dict` type; no special data type is required.
+
 ### A shorter route
 To adapt an existing node rather than start from scratch, right-click a built-in node and choose
-**Edit Notebook**. NodeFlow saves your changes as a separate notebook belonging to that node, so
-the original template is left unchanged.
+**Edit Notebook**, or press the **…** button next to it in the Library. Editing from a placed node
+saves a separate notebook for that node; editing from the Library button updates the template.
 
 ---
 
 ## Other features
 
 ### Editing a node's notebook
-Right-click a node and choose **⋯ Edit Notebook…** (or use **Node ▸ Edit Notebook…**). Saving
-creates a separate copy of the notebook for that node; the shared template and other nodes are
-not affected.
+Right-click a node and choose **Edit Notebook** (or use **Node ▸ Edit Notebook**). Saving creates
+a separate copy of the notebook for that node; the shared template and other nodes are not
+affected.
 
 ### Grouping nodes into a major node
-Select two or more nodes and choose **Graph ▸ Group Selected into Major Node…**. The selected
+Select two or more nodes and choose **Graph ▸ Group Selected into Major Node**. The selected
 nodes collapse into a single container node.
 
 ![A collapsed major node](docs/images/feature_major_board.png)
 
-Right-click the container and choose **⋯ Expand (Major Node)** to view the nodes inside it and
-their outputs.
+Right-click the container and choose **Expand (Major Node)** to view the nodes inside it and their
+outputs.
 
 ![Inside a major node](docs/images/feature_major_expanded.png)
 
@@ -250,6 +313,7 @@ The Git menu provides Commit, Push, Pull, Branch, and History, operating on the 
 | `workflow.json` | A saved board: its nodes, connections, and parameter values. |
 | `notebooks/` | The notebooks behind your nodes. |
 | `specs/` | The node specifications loaded into the Library. |
+| `files/` | Files you uploaded as source nodes. |
 | `runs/` | The outputs of each run, generated automatically. |
 
 [Papermill]: https://papermill.readthedocs.io/
