@@ -326,9 +326,37 @@ outputs.report = "<h1>Model Comparison Report</h1><table border='1'>" + "".join(
 )
 
 
+_DEFINE_COLUMNS = TemplateDef(
+    file="define_columns",
+    name="Define Columns",
+    category="Metadata",
+    description=(
+        "Map roles (target, time, id, ...) to the actual column names in your data, "
+        "so downstream notebooks can refer to them generically."
+    ),
+    outputs={"columns": "dict"},
+    params={
+        "target_col": {"type": "str", "default": "target"},
+        "time_col": {"type": "str", "default": ""},
+        "id_col": {"type": "str", "default": ""},
+    },
+    code="""
+from nodeflow import outputs, params
+
+columns = {"target": params.get("target_col", "")}
+if params.get("time_col"):
+    columns["time"] = params.get("time_col")
+if params.get("id_col"):
+    columns["id"] = params.get("id_col")
+outputs.columns = columns
+""".strip(),
+)
+
+
 TEMPLATE_DEFS: list[TemplateDef] = [
     _IMPORT_CSV, _SQL_QUERY, _DATA_CLEANING, _SPLIT_DATA,
     _LOGISTIC, _RANDOM_FOREST, _XGBOOST, _SHAP, _EVALUATION, _REPORT,
+    _DEFINE_COLUMNS,
 ]
 
 

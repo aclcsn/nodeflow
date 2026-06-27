@@ -10,10 +10,15 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
     QPlainTextEdit,
     QSpinBox,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -26,9 +31,14 @@ from nodeflow.gui.node_factory import NodeLibrary
 
 
 class LibraryPanel(QWidget):
-    """Left panel: node specs grouped by category. Double-click to add."""
+    """Left panel: node specs grouped by category.
 
-    add_requested = Signal(str)  # spec name
+    Each notebook has a ``+`` button (add it to the workflow) and a ``…`` button
+    (edit its template before adding). Double-clicking the row also adds it.
+    """
+
+    add_requested = Signal(str)            # spec name
+    edit_template_requested = Signal(str)  # spec name
 
     def __init__(self, library: NodeLibrary, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -46,18 +56,92 @@ class LibraryPanel(QWidget):
         for category, specs in self.library.by_category().items():
             cat_item = QTreeWidgetItem([category])
             cat_item.setFlags(cat_item.flags() & ~Qt.ItemIsSelectable)
+            self.tree.addTopLevelItem(cat_item)
             for spec in specs:
-                child = QTreeWidgetItem([spec.name])
+                child = QTreeWidgetItem([""])
                 child.setData(0, Qt.UserRole, spec.name)
                 child.setToolTip(0, spec.description or spec.name)
                 cat_item.addChild(child)
-            self.tree.addTopLevelItem(cat_item)
+                self.tree.setItemWidget(child, 0, self._row_widget(spec.name))
             cat_item.setExpanded(True)
+
+    def _row_widget(self, spec_name: str) -> QWidget:
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(2, 0, 2, 0)
+        h.setSpacing(2)
+        h.addWidget(QLabel(spec_name))
+        h.addStretch(1)
+        add_btn = QToolButton()
+        add_btn.setText("+")
+        add_btn.setToolTip(f"Add {spec_name} to the workflow")
+        add_btn.clicked.connect(lambda: self.add_requested.emit(spec_name))
+        edit_btn = QToolButton()
+        edit_btn.setText("…")
+        edit_btn.setToolTip(f"Edit the {spec_name} notebook template")
+        edit_btn.clicked.connect(lambda: self.edit_template_requested.emit(spec_name))
+        h.addWidget(add_btn)
+        h.addWidget(edit_btn)
+        return row
 
     def _on_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
         spec_name = item.data(0, Qt.UserRole)
         if spec_name:
             self.add_requested.emit(spec_name)
+
+
+class FilesPanel(QWidget):
+    """Left panel (below the Library): files uploaded as source nodes.
+
+    Files can be uploaded via the ``+`` button or the right-click menu; each
+    uploaded file is listed and corresponds to a file node on the canvas.
+    """
+
+    upload_requested = Signal()
+    file_activated = Signal(str)  # absolute path
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(3)
+
+        header = QHBoxLayout()
+        header.addWidget(QLabel("<b>Files</b>"))
+        header.addStretch(1)
+        add_btn = QToolButton()
+        add_btn.setText("+")
+        add_btn.setToolTip("Upload a file")
+        add_btn.clicked.connect(self.upload_requested.emit)
+        header.addWidget(add_btn)
+        layout.addLayout(header)
+
+        self.list = QListWidget()
+        self.list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._context_menu)
+        self.list.itemDoubleClicked.connect(self._on_double_click)
+        layout.addWidget(self.list)
+
+    def add_file(self, path: str) -> None:
+        from pathlib import Path
+
+        item = QListWidgetItem(Path(path).name)
+        item.setData(Qt.UserRole, str(path))
+        item.setToolTip(str(path))
+        self.list.addItem(item)
+
+    def clear(self) -> None:
+        self.list.clear()
+
+    def _context_menu(self, pos) -> None:
+        menu = QMenu(self)
+        menu.addAction("Upload a file", self.upload_requested.emit)
+        menu.exec(self.list.mapToGlobal(pos))
+
+    def _on_double_click(self, item: QListWidgetItem) -> None:
+        path = item.data(Qt.UserRole)
+        if path:
+            self.file_activated.emit(path)
 
 
 class PropertiesPanel(QWidget):

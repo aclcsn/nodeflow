@@ -16,9 +16,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDockWidget,
     QMainWindow,
+    QSplitter,
     QTabWidget,
 )
 
@@ -26,7 +28,7 @@ from nodeflow.artifacts import ArtifactManager
 from nodeflow.execution import CacheEngine, DagRunner, ExecutionEngine, RunReport
 from nodeflow.gui.canvas import Canvas
 from nodeflow.gui.node_factory import NodeLibrary
-from nodeflow.gui.panels import LibraryPanel, LogPanel, OutputsPanel, PropertiesPanel
+from nodeflow.gui.panels import FilesPanel, LibraryPanel, LogPanel, OutputsPanel, PropertiesPanel
 
 
 class ExecutionWorker(QThread):
@@ -69,6 +71,7 @@ class MainWindow(QMainWindow):
 
         # Panels
         self.library_panel = LibraryPanel(self.library)
+        self.files_panel = FilesPanel()
         self.properties_panel = PropertiesPanel()
         self.outputs_panel = OutputsPanel()
         self.log_panel = LogPanel()
@@ -77,11 +80,15 @@ class MainWindow(QMainWindow):
 
         # Signals
         self.library_panel.add_requested.connect(self.add_node)
+        self.library_panel.edit_template_requested.connect(self.edit_template)
+        self.files_panel.upload_requested.connect(self.upload_files)
+        self.files_panel.file_activated.connect(self._add_file_node)
         self.canvas.connection_rejected.connect(
             lambda msg: self.log(f"Connection rejected: {msg}")
         )
         self._connect_selection_signal()
         self._setup_node_menu()
+        self._setup_shortcuts()
         self._place_offset = 0
         self._worker: ExecutionWorker | None = None
         self._major_views: list = []  # keep references to open drill-down windows
@@ -92,7 +99,12 @@ class MainWindow(QMainWindow):
     # -- construction -----------------------------------------------------
     def _build_docks(self) -> None:
         left = QDockWidget("Library", self)
-        left.setWidget(self.library_panel)
+        split = QSplitter(Qt.Vertical)
+        split.addWidget(self.library_panel)
+        split.addWidget(self.files_panel)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 1)
+        left.setWidget(split)
         self.addDockWidget(Qt.LeftDockWidgetArea, left)
 
         right = QDockWidget("Inspector", self)
@@ -117,11 +129,16 @@ class MainWindow(QMainWindow):
         file_menu.addAction("Open Workflow…", self.open_workflow_dialog)
         file_menu.addAction("Save Workflow…", self.save_workflow_dialog)
         file_menu.addSeparator()
+        file_menu.addAction("Upload a File…", lambda: self.upload_files())
+        file_menu.addSeparator()
         file_menu.addAction("Quit", self.close)
 
         node_menu = self.menuBar().addMenu("&Node")
+        node_menu.addAction("Rename…", self.rename_selected)
         node_menu.addAction("Edit Notebook…", self.edit_selected_notebook)
         node_menu.addAction("Expand Major Node", self.expand_selected_major)
+        node_menu.addSeparator()
+        node_menu.addAction("Delete", self.delete_selected)
 
         graph_menu = self.menuBar().addMenu("Grap&h")
         graph_menu.addAction("Group Selected into Major Node…", self.group_into_major_dialog)
@@ -146,6 +163,15 @@ class MainWindow(QMainWindow):
                     return
                 except Exception:
                     continue
+
+    def _setup_shortcuts(self) -> None:
+        """Delete / Backspace remove the selected node(s) when the canvas has focus."""
+        self._shortcuts = []
+        for key in (Qt.Key_Delete, Qt.Key_Backspace):
+            sc = QShortcut(QKeySequence(key), self.canvas.widget)
+            sc.setContext(Qt.WidgetWithChildrenShortcut)
+            sc.activated.connect(self.delete_selected)
+            self._shortcuts.append(sc)
 
     # -- actions ----------------------------------------------------------
     def add_node(self, spec_name: str) -> str:
@@ -217,12 +243,18 @@ class MainWindow(QMainWindow):
                 continue
             try:
                 menu.add_command(
+                    "⋯ Rename…", self._node_command(self.rename_dialog), node_type=type_id
+                )
+                menu.add_command(
                     "⋯ Edit Notebook…", self._node_command(self.open_notebook_editor),
                     node_type=type_id,
                 )
                 menu.add_command(
                     "⋯ Expand (Major Node)", self._node_command(self.expand_major_node),
                     node_type=type_id,
+                )
+                menu.add_command(
+                    "⋯ Delete", self._node_command(self.delete_node), node_type=type_id
                 )
             except Exception:
                 continue
@@ -241,6 +273,149 @@ class MainWindow(QMainWindow):
             self.expand_major_node(ids[0])
         else:
             self.log("Select a major node to expand.")
+
+    # -- remove / rename nodes (Feature 1 & 3) ----------------------------
+    def delete_node(self, node_id: str) -> None:
+        self.canvas.remove_node(node_id)
+        if not self.canvas.selected_node_ids():
+            self.properties_panel.clear()
+            self.outputs_panel.show_message("Select a node to see its outputs.")
+        self.log(f"Deleted node {node_id!r}")
+
+    def delete_selected(self) -> None:
+        ids = self.canvas.selected_node_ids()
+        if not ids:
+            self.log("Select a node to delete.")
+            return
+        for node_id in ids:
+            self.canvas.remove_node(node_id)
+        self.properties_panel.clear()
+        self.outputs_panel.show_message("Select a node to see its outputs.")
+        self.log(f"Deleted {len(ids)} node(s).")
+
+    def rename_node(self, node_id: str, new_name: str) -> None:
+        self.canvas.rename(node_id, new_name)
+        if self.canvas.selected_node_ids() == [node_id]:
+            self.properties_panel.show_node(self.canvas.instance(node_id))
+        self.log(f"Renamed {node_id} to {new_name!r}")
+
+    def rename_dialog(self, node_id: str) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        inst = self.canvas.instance(node_id)
+        name, ok = QInputDialog.getText(self, "Rename Node", "New name:", text=inst.label)
+        if ok and name:
+            self.rename_node(node_id, name)
+
+    def rename_selected(self) -> None:
+        ids = self.canvas.selected_node_ids()
+        if ids:
+            self.rename_dialog(ids[0])
+        else:
+            self.log("Select a node to rename.")
+
+    # -- file inputs (Feature 2) ------------------------------------------
+    def upload_files(self, paths: list[str] | None = None) -> list[str]:
+        """Copy files into the project and add a source node for each."""
+        import shutil
+
+        if paths is None:
+            from PySide6.QtWidgets import QFileDialog
+
+            paths, _ = QFileDialog.getOpenFileNames(
+                self, "Upload Files", str(self.project_dir), "All Files (*)"
+            )
+        if not paths:
+            return []
+        files_dir = self.project_dir / "files"
+        files_dir.mkdir(parents=True, exist_ok=True)
+        added: list[str] = []
+        for src in paths:
+            src = Path(src)
+            dest = files_dir / src.name
+            try:
+                if src.resolve() != dest.resolve():
+                    shutil.copy2(src, dest)
+            except Exception as exc:
+                self.log(f"Could not copy {src.name}: {exc}")
+                continue
+            self.files_panel.add_file(str(dest))
+            added.append(self._add_file_node(str(dest)))
+        if added:
+            self.log(f"Uploaded {len(added)} file(s).")
+        return added
+
+    def _ensure_loader_notebooks(self) -> None:
+        from nodeflow.execution.notebook import save_notebook
+
+        nb_dir = self.project_dir / "notebooks"
+        csv_nb = nb_dir / "_load_csv.ipynb"
+        if not csv_nb.exists():
+            save_notebook(
+                ["import pandas as pd\nfrom nodeflow import outputs, params\n"
+                 "outputs.data = pd.read_csv(params.path)"],
+                csv_nb, parameters_cell='path = ""',
+            )
+        text_nb = nb_dir / "_load_text.ipynb"
+        if not text_nb.exists():
+            save_notebook(
+                ["from nodeflow import outputs, params\n"
+                 "with open(params.path, encoding='utf-8', errors='replace') as fh:\n"
+                 "    outputs.text = fh.read()"],
+                text_nb, parameters_cell='path = ""',
+            )
+
+    def _add_file_node(self, file_path: str) -> str:
+        from nodeflow.core.graph import NodeInstance
+        from nodeflow.core.spec import NodeSpec, ParameterSpec, ParameterType, PortSpec
+
+        self._ensure_loader_notebooks()
+        path = Path(file_path)
+        if path.suffix.lower() == ".csv":
+            spec = NodeSpec(
+                name=path.name, category="Files", notebook="notebooks/_load_csv.ipynb",
+                description=f"CSV file: {path.name}",
+                outputs={"data": PortSpec(type="dataframe")},
+                parameters={"path": ParameterSpec(type=ParameterType.STR, default=str(path))},
+            )
+        else:
+            spec = NodeSpec(
+                name=path.name, category="Files", notebook="notebooks/_load_text.ipynb",
+                description=f"Text/script file: {path.name}",
+                outputs={"text": PortSpec(type="text")},
+                parameters={"path": ParameterSpec(type=ParameterType.STR, default=str(path))},
+            )
+        self._place_offset += 40
+        node_id = self.canvas.unique_node_id(path.stem)
+        inst = NodeInstance(
+            id=node_id, spec=spec, params={"path": str(path)},
+            position=(self._place_offset, self._place_offset),
+        )
+        self.canvas.add_instance(inst)
+        self.canvas.rename(node_id, path.name)
+        self._ensure_node_menu()
+        self.log(f"Added file node {path.name}")
+        return node_id
+
+    # -- edit a library template (Feature 4 ⋯ button) ---------------------
+    def edit_template(self, spec_name: str) -> None:
+        from nodeflow.execution.notebook import read_notebook, save_notebook
+        from nodeflow.gui.notebook_editor import NotebookEditorDialog
+
+        spec = self.library.get(spec_name)
+        if not spec.notebook:
+            self.log(f"{spec_name} has no notebook template to edit.")
+            return
+        nb_path = self.project_dir / spec.notebook
+        if not nb_path.exists():
+            self.log(f"Template notebook not found: {nb_path}")
+            return
+        params, code = read_notebook(nb_path)
+        dlg = NotebookEditorDialog(f"{spec_name} (template)", params, code, self)
+        if dlg.exec() and dlg.saved:
+            p, c = dlg.result_cells()
+            save_notebook(c, nb_path, parameters_cell=p)
+            self.log(f"Updated template notebook for {spec_name!r}")
 
     # -- editable notebooks (Feature 2) -----------------------------------
     def _resolve_notebook(self, inst):

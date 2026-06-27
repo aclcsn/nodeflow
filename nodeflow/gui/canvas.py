@@ -36,6 +36,12 @@ class Canvas(QObject):
 
         self.graph.port_connected.connect(self._on_port_connected)
         self.graph.port_disconnected.connect(self._on_port_disconnected)
+        # Keep the model in sync when NodeGraphQt deletes nodes (Delete key,
+        # the per-node ✕ button, etc.).
+        try:
+            self.graph.nodes_deleted.connect(self._on_nodes_deleted)
+        except Exception:
+            pass
 
     @property
     def widget(self):
@@ -146,6 +152,47 @@ class Canvas(QObject):
             finally:
                 self._syncing = False
         self.model.remove_node(node_id)
+
+    def remove_selected(self) -> int:
+        """Delete the currently selected nodes. Returns how many were removed."""
+        ids = self.selected_node_ids()
+        for node_id in ids:
+            self.remove_node(node_id)
+        return len(ids)
+
+    def _on_nodes_deleted(self, ng_ids) -> None:
+        """Mirror NodeGraphQt-initiated deletions (key / ✕ button) into the model."""
+        if self._syncing:
+            return
+        removed = False
+        for ng_id in ng_ids:
+            node_id = self._id_by_ng.pop(ng_id, None)
+            if node_id is not None:
+                self._ng_by_id.pop(node_id, None)
+                self.model.remove_node(node_id)
+                removed = True
+        if removed:
+            self.graph_changed.emit()
+
+    def rename(self, node_id: str, new_name: str) -> None:
+        """Set a node's display name (its title); the node id is unchanged."""
+        ng = self._ng_by_id.get(node_id)
+        if ng is not None:
+            ng.set_name(new_name)
+        self.model.node(node_id).title = new_name
+        self.graph_changed.emit()
+
+    def unique_node_id(self, base: str) -> str:
+        """A model-unique node id derived from ``base``."""
+        import re
+
+        cleaned = re.sub(r"\W+", "_", base).strip("_") or "node"
+        if cleaned not in self.model.nodes:
+            return cleaned
+        i = 1
+        while f"{cleaned}_{i}" in self.model.nodes:
+            i += 1
+        return f"{cleaned}_{i}"
 
     # -- connections ------------------------------------------------------
     def connect(self, source: str, source_port: str, target: str, target_port: str) -> bool:
