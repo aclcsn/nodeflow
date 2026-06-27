@@ -348,22 +348,22 @@ class MainWindow(QMainWindow):
     def _ensure_loader_notebooks(self) -> None:
         from nodeflow.execution.notebook import save_notebook
 
+        # Internal loaders (regenerated so they stay in step with the file-node spec,
+        # which exposes the file's location as a ``path`` output).
         nb_dir = self.project_dir / "notebooks"
-        csv_nb = nb_dir / "_load_csv.ipynb"
-        if not csv_nb.exists():
-            save_notebook(
-                ["import pandas as pd\nfrom nodeflow import outputs, params\n"
-                 "outputs.data = pd.read_csv(params.path)"],
-                csv_nb, parameters_cell='path = ""',
-            )
-        text_nb = nb_dir / "_load_text.ipynb"
-        if not text_nb.exists():
-            save_notebook(
-                ["from nodeflow import outputs, params\n"
-                 "with open(params.path, encoding='utf-8', errors='replace') as fh:\n"
-                 "    outputs.text = fh.read()"],
-                text_nb, parameters_cell='path = ""',
-            )
+        save_notebook(
+            ["import pandas as pd\nfrom nodeflow import outputs, params\n"
+             "outputs.path = params.path\n"
+             "outputs.data = pd.read_csv(params.path)"],
+            nb_dir / "_load_csv.ipynb", parameters_cell='path = ""',
+        )
+        save_notebook(
+            ["from nodeflow import outputs, params\n"
+             "outputs.path = params.path\n"
+             "with open(params.path, encoding='utf-8', errors='replace') as fh:\n"
+             "    outputs.text = fh.read()"],
+            nb_dir / "_load_text.ipynb", parameters_cell='path = ""',
+        )
 
     def _add_file_node(self, file_path: str) -> str:
         from nodeflow.core.graph import NodeInstance
@@ -371,18 +371,20 @@ class MainWindow(QMainWindow):
 
         self._ensure_loader_notebooks()
         path = Path(file_path)
+        # Every file node exposes its location as a ``path`` (text) output, so a
+        # custom reader node can take the path and parse the file with its own options.
         if path.suffix.lower() == ".csv":
             spec = NodeSpec(
                 name=path.name, category="Files", notebook="notebooks/_load_csv.ipynb",
                 description=f"CSV file: {path.name}",
-                outputs={"data": PortSpec(type="dataframe")},
+                outputs={"data": PortSpec(type="dataframe"), "path": PortSpec(type="text")},
                 parameters={"path": ParameterSpec(type=ParameterType.STR, default=str(path))},
             )
         else:
             spec = NodeSpec(
                 name=path.name, category="Files", notebook="notebooks/_load_text.ipynb",
                 description=f"Text/script file: {path.name}",
-                outputs={"text": PortSpec(type="text")},
+                outputs={"text": PortSpec(type="text"), "path": PortSpec(type="text")},
                 parameters={"path": ParameterSpec(type=ParameterType.STR, default=str(path))},
             )
         self._place_offset += 40

@@ -151,8 +151,12 @@ Use **File ▸ Save Workflow** to store the board as a `workflow.json` file.
 Press the **+** button in the Files section, right-click in the Files section and choose
 **Upload a file**, or use **File ▸ Upload a File**. Your file browser opens and you can select one
 or more files. Each file is copied into the project's `files/` folder and added to the canvas as a
-source node: a `.csv` file produces a table output, and a `.sql` or other text file produces a
-text output. You can then connect it to other nodes.
+source node: a `.csv` file produces a table (`data`) output, and a `.sql` or other text file
+produces a text output. You can then connect it to other nodes.
+
+Every file node also exposes a **`path`** output (the file's location, as text). Connect that into
+a custom reader node — one that takes a `path` text input and parses the file with its own options
+— when you need to read the file your own way instead of using the default parser.
 
 ---
 
