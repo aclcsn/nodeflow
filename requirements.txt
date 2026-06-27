@@ -1,0 +1,23 @@
+# NodeFlow runtime dependencies
+# Target: Python 3.11+ (developed/tested on 3.14)
+
+# --- Core engine (headless-testable) ---
+pydantic>=2.7
+networkx>=3.3
+papermill>=2.6
+nbformat>=5.10
+nbclient>=0.10
+ipykernel>=6.29
+joblib>=1.4
+pyarrow>=16
+pandas>=2.2
+scikit-learn>=1.4
+pyyaml>=6.0
+matplotlib>=3.8
+reportlab>=4.1
+GitPython>=3.1
+
+# --- GUI (desktop) ---
+# Installed separately; may lag latest Python releases.
+PySide6>=6.7
+NodeGraphQt>=0.6
