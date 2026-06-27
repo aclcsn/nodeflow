@@ -1,136 +1,255 @@
 # NodeFlow
 
-**A visual workflow tool for Jupyter notebooks.** Each node on the canvas is a notebook —
-you wire notebooks together and NodeFlow runs them, passing data from one to the next. No file
-paths, no glue code: write `inputs` / `outputs` in your notebook and connect the dots.
+NodeFlow is a desktop application for building data and machine-learning workflows out of
+Jupyter notebooks. Each node on the canvas is an instance of a notebook. You connect nodes to
+describe how data flows between them, and NodeFlow runs the notebooks in order, supplying each
+one with its inputs and storing its outputs. Notebooks exchange data through declared inputs and
+outputs rather than reading and writing files directly.
 
 ![NodeFlow](docs/images/gui_templates.png)
 
 ---
 
-## What you get
+## Overview
 
-- **Drag-and-drop canvas** — build ML/data pipelines visually (Blender-style nodes).
-- **Nodes are notebooks** — executed with [Papermill]; edit them right in the app.
-- **Smart caching** — only the nodes you changed re-run.
-- **Built-in templates** — Import CSV, Clean, Split, Logistic Regression, Random Forest,
-  XGBoost, SHAP, Evaluation, Report.
-- **Output previews** — tables, charts, metrics and HTML reports inside the app.
--  **Major nodes** — group nodes into a reusable container you can expand.
-- **Git built in** — commit, push, pull from the menu.
+- **Visual canvas.** You assemble a workflow by adding nodes and connecting their ports.
+- **Nodes are notebooks.** Each node runs a notebook with [Papermill]. Notebooks can be edited
+  inside the application.
+- **Caching.** A node is re-run only when its code, parameters, or inputs change; otherwise its
+  previous result is reused.
+- **Built-in templates.** A starter set is provided: Import CSV, Data Cleaning, Split Data,
+  Logistic Regression, Random Forest, XGBoost, SHAP, Evaluation, and Report.
+- **Output previews.** Tables, figures, metrics, and HTML reports can be viewed within the
+  application.
+- **Major nodes.** A group of nodes can be collapsed into a single container node and expanded
+  again when you need to inspect its contents.
+- **Version control.** Common Git operations (commit, push, pull, branch, history) are available
+  from the menu.
 
 ---
 
-## Install
+## Requirements
 
-You need **Python 3.11+** and **Git**. Then:
+- Python 3.11 or later
+- Git
 
-### 1. Get the code
+## Installation
+
+### 1. Obtain the code
 ```bash
 git clone https://github.com/aclcsn/nodeflow.git
 cd nodeflow
 ```
 
-### 2. Create a virtual environment
+### 2. Create and activate a virtual environment
 
-**macOS / Linux**
+macOS / Linux:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-**Windows (PowerShell)**
+Windows (PowerShell):
 ```powershell
 py -3 -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
-### 3. Install NodeFlow
+### 3. Install the package
 ```bash
 pip install --upgrade pip
 pip install -e ".[gui,dev]"
 ```
 
-### 4. Register the notebook kernel  *(don't skip this!)*
-Each node runs in a Jupyter kernel that must find NodeFlow. With the venv **active**, run:
+### 4. Register the notebook kernel
+Each node runs in a Jupyter kernel that must be able to import NodeFlow. With the virtual
+environment active, register a kernel that points at it. Do not skip this step; without it,
+nodes will fail to run.
 ```bash
 python -m ipykernel install --sys-prefix --name nodeflow --display-name "NodeFlow (venv)"
 ```
 
-### 5. Check it works
+### 5. Confirm the installation
 ```bash
 nodeflow --version
 ```
 
 ---
 
-## Launch
+## Launching
 
 ```bash
 nodeflow
 ```
 
+NodeFlow treats the directory you launch it from as your project. It keeps node notebooks in a
+`notebooks/` folder and node specifications in a `specs/` folder within that directory.
+
 ---
 
-## Getting started
+## A guided tour
 
-### Pick a workflow
-When NodeFlow opens, choose a saved workflow, start a **New Blank Workflow**, or **Browse…**.
+### Choosing a workflow
+When NodeFlow opens, it asks which workflow to load. You can open a saved workflow, start a new
+blank one, or browse for a file.
 
 ![Startup chooser](docs/images/feature_chooser.png)
 
 ### The window
-After opening, you'll see four areas:
+The interface is divided into four areas.
 
 ![The NodeFlow window](docs/images/gui_final.png)
 
-| Area | What it's for |
-|------|---------------|
-| **Library** (left) | Available node templates, grouped by category. |
-| **Canvas** (center) | Your workflow — the nodes and their connections. |
-| **Inspector** (right) | A selected node's **Properties** (parameters) and **Outputs** (previews). |
-| **Logs** (bottom) | What's happening as you build and run. |
+| Area | Purpose |
+|------|---------|
+| **Library** (left) | The node types available to add, grouped by category. |
+| **Canvas** (centre) | Your workflow: the nodes and the connections between them. |
+| **Inspector** (right) | The selected node's **Properties** (parameters) and **Outputs** (previews). |
+| **Logs** (bottom) | Messages produced while building and running the workflow. |
 
-### Build a workflow in 5 steps
-1. **Add a node** — double-click a template in the **Library** (e.g. *Import CSV*).
-2. **Connect nodes** — drag from a node's **output** dot to another node's **input** dot.
-   NodeFlow only allows matching types.
-3. **Set parameters** — click a node, edit its values in the **Properties** tab.
-4. **Run** — use the **Run** menu → *Run All* (only changed nodes re-run thanks to caching).
-5. **See results** — click a node and open the **Outputs** tab to preview its table / chart / report.
+### Building and running a workflow
+1. **Add a node.** Double-click a node type in the Library, for example *Import CSV*.
+2. **Connect nodes.** Drag from a node's output port to another node's input port. A connection
+   is permitted only when the two port types match.
+3. **Set parameters.** Select a node and edit its values in the Properties tab.
+4. **Run.** Use the Run menu. *Run All* executes the workflow; nodes whose inputs and code are
+   unchanged are served from the cache.
+5. **Inspect outputs.** Select a node and open the Outputs tab to view its table, figure, or
+   report.
 
-Then **File ▸ Save Workflow** to keep your board.
+Use **File ▸ Save Workflow** to store the board as a `workflow.json` file.
 
 ---
 
-## Handy features
+## Writing your own node
 
-### Edit a node's notebook
-Right-click a node → **⋯ Edit Notebook…** (or **Node ▸ Edit Notebook…**). Saving makes a
-**separate copy** for that node, so the original template stays untouched.
+Beyond the built-in templates, you can define your own node types. A node is described by two
+files in your project folder:
 
-### Group nodes into a "major node"
-Select two or more nodes → **Graph ▸ Group Selected into Major Node…**. They collapse into one
-tidy node:
+- a notebook in `notebooks/` — the code the node runs, and
+- a specification in `specs/` — a YAML file that declares the node's name, category, inputs,
+  outputs, and parameters.
+
+### Step 1 — Write the notebook
+A notebook communicates with NodeFlow through three objects provided by its SDK:
+
+```python
+from nodeflow import inputs, outputs, params
+```
+
+- `inputs.<name>` returns the artifact connected to that input port, already loaded for you.
+- `params.<name>` returns the value of a parameter.
+- Assigning `outputs.<name> = value` stores a result for downstream nodes to use.
+
+Treat a node as a pure function: read from `inputs` and `params`, perform a computation, and
+assign the results to `outputs`. Do not open or save files yourself; NodeFlow is responsible for
+loading inputs and storing outputs.
+
+As an example, the following notebook keeps the rows of a table whose value in a chosen column is
+at or above a threshold, and also reports how many rows were kept.
+
+```python
+from nodeflow import inputs, outputs, params
+
+frame = inputs.table
+column = params.column
+threshold = params.threshold
+
+kept = frame[frame[column] >= threshold]
+
+outputs.result = kept
+outputs.summary = {"kept": int(len(kept)), "total": int(len(frame))}
+```
+
+Save this as `notebooks/filter_rows.ipynb`.
+
+### Step 2 — Write the specification
+Create `specs/filter_rows.yaml`:
+
+```yaml
+name: Filter Rows
+category: Transform
+notebook: notebooks/filter_rows.ipynb
+inputs:
+  table:
+    type: dataframe
+outputs:
+  result:
+    type: dataframe
+  summary:
+    type: dict
+parameters:
+  column:
+    type: str
+    default: value
+  threshold:
+    type: float
+    default: 0.0
+```
+
+The names under `inputs`, `outputs`, and `parameters` must match the names used in the notebook.
+The `notebook` path is given relative to the project folder.
+
+### Step 3 — Use the node
+Restart NodeFlow. The new node appears in the Library under its category, here *Transform*. Add
+it to a board, connect a table to its input, set its parameters, and run it as you would any
+other node. Because NodeFlow records the notebook's contents in its cache, editing the notebook
+later causes the node, and anything downstream of it, to re-run.
+
+### Reference — supported types
+Each input and output declares one of the following types, which determines how its data is
+stored on disk:
+
+| Type            | Stored as | Example value                          |
+|-----------------|-----------|----------------------------------------|
+| `dataframe`     | Parquet   | a pandas `DataFrame`                    |
+| `sklearn_model` | joblib    | a fitted scikit-learn estimator         |
+| `figure`        | PNG       | a Matplotlib `Figure`                   |
+| `ndarray`       | `.npy`    | a NumPy array                           |
+| `dict` / `list` | JSON      | a dictionary or list of JSON values     |
+| `text`          | `.txt`    | a string                                |
+| `html`          | `.html`   | an HTML string                          |
+
+Parameters declare one of these types: `int`, `float`, `str`, `bool`, or `choice` (which also
+takes a `choices` list of allowed values).
+
+### A shorter route
+To adapt an existing node rather than start from scratch, right-click a built-in node and choose
+**Edit Notebook**. NodeFlow saves your changes as a separate notebook belonging to that node, so
+the original template is left unchanged.
+
+---
+
+## Other features
+
+### Editing a node's notebook
+Right-click a node and choose **⋯ Edit Notebook…** (or use **Node ▸ Edit Notebook…**). Saving
+creates a separate copy of the notebook for that node; the shared template and other nodes are
+not affected.
+
+### Grouping nodes into a major node
+Select two or more nodes and choose **Graph ▸ Group Selected into Major Node…**. The selected
+nodes collapse into a single container node.
 
 ![A collapsed major node](docs/images/feature_major_board.png)
 
-Right-click it → **⋯ Expand (Major Node)** to look inside and see the subnodes' outputs:
+Right-click the container and choose **⋯ Expand (Major Node)** to view the nodes inside it and
+their outputs.
 
 ![Inside a major node](docs/images/feature_major_expanded.png)
 
-### Save to Git
-Use the **Git** menu to *Commit*, *Push*, *Pull*, make a *Branch*, or view *History* — all on
-your whole project.
+### Version control
+The Git menu provides Commit, Push, Pull, Branch, and History, operating on the whole project.
 
 ---
 
-## Where your stuff lives
+## Project files
 
 | Path | Contents |
 |------|----------|
-| `workflow.json` | Your saved board (nodes, connections, parameters). |
+| `workflow.json` | A saved board: its nodes, connections, and parameter values. |
 | `notebooks/` | The notebooks behind your nodes. |
-| `runs/` | Results from each run (auto-generated). |
+| `specs/` | The node specifications loaded into the Library. |
+| `runs/` | The outputs of each run, generated automatically. |
 
 [Papermill]: https://papermill.readthedocs.io/
