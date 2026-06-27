@@ -209,6 +209,7 @@ _BUILTINS = [
     ("list", _json_serialize, _json_deserialize, "json", lambda o: isinstance(o, list), "list as JSON"),
     ("text", _text_serialize, _read_text, "txt", lambda o: isinstance(o, str), "text as .txt"),
     ("html", _html_serialize, _read_text, "html", None, "HTML as .html (declared explicitly)"),
+    ("path", _text_serialize, _read_text, "txt", None, "filesystem path as text (declared explicitly)"),
 ]
 
 

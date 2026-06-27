@@ -182,6 +182,17 @@ class Canvas(QObject):
         self.model.node(node_id).title = new_name
         self.graph_changed.emit()
 
+    def recolor_category(self, category: str, rgb: tuple[int, int, int]) -> int:
+        """Recolour every node in ``category`` to ``rgb``. Returns how many."""
+        count = 0
+        for node_id, inst in self.model.nodes.items():
+            if inst.spec.category == category:
+                ng = self._ng_by_id.get(node_id)
+                if ng is not None:
+                    ng.set_color(*rgb)
+                    count += 1
+        return count
+
     def unique_node_id(self, base: str) -> str:
         """A model-unique node id derived from ``base``."""
         import re

@@ -81,6 +81,9 @@ class MainWindow(QMainWindow):
         # Signals
         self.library_panel.add_requested.connect(self.add_node)
         self.library_panel.edit_template_requested.connect(self.edit_template)
+        self.library_panel.delete_requested.connect(self.delete_library_node)
+        self.library_panel.refresh_requested.connect(self.refresh_library)
+        self.library_panel.category_color_changed.connect(self.set_category_color)
         self.files_panel.upload_requested.connect(self.upload_files)
         self.files_panel.file_activated.connect(self._add_file_node)
         self.canvas.connection_rejected.connect(
@@ -92,6 +95,7 @@ class MainWindow(QMainWindow):
         self._place_offset = 0
         self._worker: ExecutionWorker | None = None
         self._major_views: list = []  # keep references to open drill-down windows
+        self._current_workflow_path: str | None = None  # for Ctrl/Cmd+S overwrite
 
         self.statusBar().showMessage("Ready")
         self.log(f"NodeFlow ready · project: {self.project_dir}")
@@ -130,6 +134,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction("Save Workflow…", self.save_workflow_dialog)
         file_menu.addSeparator()
         file_menu.addAction("Upload a File…", lambda: self.upload_files())
+        file_menu.addAction("Refresh Library", self.refresh_library)
         file_menu.addSeparator()
         file_menu.addAction("Quit", self.close)
 
@@ -165,13 +170,23 @@ class MainWindow(QMainWindow):
                     continue
 
     def _setup_shortcuts(self) -> None:
-        """Delete / Backspace remove the selected node(s) when the canvas has focus."""
+        """Keyboard shortcuts: Delete/Backspace remove nodes; Ctrl/Cmd+S saves."""
         self._shortcuts = []
         for key in (Qt.Key_Delete, Qt.Key_Backspace):
             sc = QShortcut(QKeySequence(key), self.canvas.widget)
             sc.setContext(Qt.WidgetWithChildrenShortcut)
             sc.activated.connect(self.delete_selected)
             self._shortcuts.append(sc)
+        save_sc = QShortcut(QKeySequence.Save, self)  # Ctrl+S / Cmd+S
+        save_sc.activated.connect(self.save_current)
+        self._shortcuts.append(save_sc)
+
+    def save_current(self) -> None:
+        """Save to the currently open file (overwrite), or prompt if none is open."""
+        if self._current_workflow_path:
+            self.save_workflow(self._current_workflow_path)
+        else:
+            self.save_workflow_dialog()
 
     # -- actions ----------------------------------------------------------
     def add_node(self, spec_name: str) -> str:
@@ -377,14 +392,14 @@ class MainWindow(QMainWindow):
             spec = NodeSpec(
                 name=path.name, category="Files", notebook="notebooks/_load_csv.ipynb",
                 description=f"CSV file: {path.name}",
-                outputs={"data": PortSpec(type="dataframe"), "path": PortSpec(type="text")},
+                outputs={"data": PortSpec(type="dataframe"), "path": PortSpec(type="path")},
                 parameters={"path": ParameterSpec(type=ParameterType.STR, default=str(path))},
             )
         else:
             spec = NodeSpec(
                 name=path.name, category="Files", notebook="notebooks/_load_text.ipynb",
                 description=f"Text/script file: {path.name}",
-                outputs={"text": PortSpec(type="text"), "path": PortSpec(type="text")},
+                outputs={"text": PortSpec(type="text"), "path": PortSpec(type="path")},
                 parameters={"path": ParameterSpec(type=ParameterType.STR, default=str(path))},
             )
         self._place_offset += 40
@@ -575,12 +590,56 @@ class MainWindow(QMainWindow):
         from nodeflow.gui.persistence import save_window
 
         save_window(self, path)
+        self._current_workflow_path = str(path)
         self.log(f"Saved workflow: {path}")
 
     def load_workflow(self, path) -> None:
         from nodeflow.gui.persistence import load_into_window
 
         load_into_window(self, path)
+        self._current_workflow_path = str(path)
+
+    # -- library: refresh / delete / category colour (Features 2, 4, 5) ----
+    def refresh_library(self) -> None:
+        """Rescan the project's specs folder so newly added nodes appear."""
+        self.library.load_dir(self.project_dir / "specs")
+        self.library_panel.refresh()
+        self.log(f"Library refreshed ({len(self.library)} nodes).")
+
+    def delete_library_node(self, spec_name: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        answer = QMessageBox.question(
+            self, "Delete from Library",
+            f"Remove '{spec_name}' from the Notebook Library?",
+        )
+        if answer == QMessageBox.Yes:
+            self._delete_library_node(spec_name)
+
+    def _delete_library_node(self, spec_name: str) -> None:
+        """Remove a node from the library and its on-disk spec (headless-testable)."""
+        from nodeflow.core.spec import load_node_spec
+
+        existed = self.library.remove(spec_name)
+        specs_dir = self.project_dir / "specs"
+        if specs_dir.is_dir():
+            for yaml in specs_dir.glob("*.yaml"):
+                try:
+                    if load_node_spec(yaml).name == spec_name:
+                        yaml.unlink()
+                        break
+                except Exception:
+                    continue
+        self.library_panel.refresh()
+        if existed:
+            self.log(f"Deleted '{spec_name}' from the library.")
+
+    def set_category_color(self, category: str, rgb) -> None:
+        from nodeflow.gui.theme import set_category_color
+
+        set_category_color(category, tuple(rgb))
+        self.canvas.recolor_category(category, tuple(rgb))
+        self.log(f"Set colour for category '{category}'.")
 
     def save_workflow_dialog(self) -> None:
         from PySide6.QtWidgets import QFileDialog

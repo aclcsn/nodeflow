@@ -130,7 +130,8 @@ The interface is divided into four areas. The library on the left has two parts:
 
 ### Building and running a workflow
 1. **Add a node.** Double-click a node type in the Library, or press its **+** button. Each entry
-   also has a **…** button to edit its notebook template before adding it.
+   also has a **…** button to edit its notebook template before adding it, and a **🗑** button to
+   remove it from the library.
 2. **Connect nodes.** Drag from a node's output port to another node's input port. A connection
    is permitted only when the two port types match.
 3. **Set parameters.** Select a node and edit its values in the Properties tab.
@@ -139,7 +140,9 @@ The interface is divided into four areas. The library on the left has two parts:
 5. **Inspect outputs.** Select a node and open the Outputs tab to view its table, figure, or
    report.
 
-Use **File ▸ Save Workflow** to store the board as a `workflow.json` file.
+Use **File ▸ Save Workflow** to store the board as a `workflow.json` file. **Ctrl/Cmd+S** saves to
+the file that is currently open, overwriting it (or prompts for a location if the board has not
+been saved yet).
 
 ### Managing nodes
 - **Rename** a node: right-click it and choose **Rename**, or use **Node ▸ Rename**. The display
@@ -155,10 +158,22 @@ source node: a `.csv` file produces a table (`data`) output, and a `.sql` or oth
 produces a text output. You can then connect it to other nodes.
 
 Every file node has two output ports: its content (`data` for a CSV, `text` for other files) and a
-**`path`** output (the file's location, as text). Connect the `path` output into a custom reader
-node — one that takes a `path` text input and parses the file with its own options — when you need
-to read the file your own way instead of using the default parser. Workflows saved before the
-`path` output existed gain it automatically the next time you open them.
+**`path`** output (the file's location). Connect the `path` output into a custom reader node — one
+that takes a **`path`** input — when you need to read the file your own way instead of using the
+default parser. The `path` type carries the file location, so a reader can call its own loader
+(for example `db.read_csv(inputs.path, sep=…, decimal=…)`). Workflows saved before the `path`
+output existed gain it automatically the next time you open them.
+
+### Managing the library
+- **Refresh.** After you add a new notebook and spec to the `specs/` folder, press the **⟳** button
+  at the top of the Notebook Library (or **File ▸ Refresh Library**) to detect it without
+  restarting.
+- **Recolour a category.** Right-click a category heading and choose **Set Colour…** to pick one
+  colour for every node in that category, keeping a category visually uniform.
+- **Delete a node.** Press the **🗑** button next to a node to remove it from the library (and its
+  spec file), so it no longer appears.
+
+![Library with per-category colours and the refresh, edit, and delete controls](docs/images/feature_library_extras.png)
 
 ---
 
