@@ -154,9 +154,11 @@ or more files. Each file is copied into the project's `files/` folder and added 
 source node: a `.csv` file produces a table (`data`) output, and a `.sql` or other text file
 produces a text output. You can then connect it to other nodes.
 
-Every file node also exposes a **`path`** output (the file's location, as text). Connect that into
-a custom reader node — one that takes a `path` text input and parses the file with its own options
-— when you need to read the file your own way instead of using the default parser.
+Every file node has two output ports: its content (`data` for a CSV, `text` for other files) and a
+**`path`** output (the file's location, as text). Connect the `path` output into a custom reader
+node — one that takes a `path` text input and parses the file with its own options — when you need
+to read the file your own way instead of using the default parser. Workflows saved before the
+`path` output existed gain it automatically the next time you open them.
 
 ---
 
