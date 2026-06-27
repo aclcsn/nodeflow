@@ -18,8 +18,19 @@ CATEGORY_COLORS: dict[str, tuple[int, int, int]] = {
 
 DEFAULT_NODE_COLOR = (90, 90, 100)
 
+# User-chosen colors override the defaults. One colour per category keeps every
+# node in a category visually uniform.
+_CATEGORY_OVERRIDES: dict[str, tuple[int, int, int]] = {}
+
+
+def set_category_color(category: str, rgb: tuple[int, int, int]) -> None:
+    """Set (or replace) the single colour used for a category's nodes."""
+    _CATEGORY_OVERRIDES[category] = tuple(rgb)
+
 
 def color_for_category(category: str) -> tuple[int, int, int]:
+    if category in _CATEGORY_OVERRIDES:
+        return _CATEGORY_OVERRIDES[category]
     return CATEGORY_COLORS.get(category, DEFAULT_NODE_COLOR)
 
 

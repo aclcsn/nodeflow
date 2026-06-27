@@ -41,6 +41,10 @@ class NodeLibrary:
     def get(self, name: str) -> NodeSpec:
         return self._specs[name]
 
+    def remove(self, name: str) -> bool:
+        """Remove a spec from the catalog. Returns whether it was present."""
+        return self._specs.pop(name, None) is not None
+
     def names(self) -> list[str]:
         return sorted(self._specs)
 

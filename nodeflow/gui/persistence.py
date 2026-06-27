@@ -29,7 +29,7 @@ def _upgrade_file_nodes(model) -> int:
         spec = instance.spec
         if spec.category == "Files" and "path" not in spec.outputs:
             outputs = dict(spec.outputs)
-            outputs["path"] = PortSpec(type="text")
+            outputs["path"] = PortSpec(type="path")
             instance.spec = spec.model_copy(update={"outputs": outputs})
             upgraded += 1
     return upgraded

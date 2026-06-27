@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -33,29 +34,50 @@ from nodeflow.gui.node_factory import NodeLibrary
 class LibraryPanel(QWidget):
     """Left panel: node specs grouped by category.
 
-    Each notebook has a ``+`` button (add it to the workflow) and a ``…`` button
-    (edit its template before adding). Double-clicking the row also adds it.
+    Each notebook has a ``+`` button (add it to the workflow), a ``…`` button
+    (edit its template), and a ``🗑`` button (remove it from the library).
+    The ``⟳`` button rescans the project for new notebooks. Right-clicking a
+    category lets you pick one colour for all of its nodes.
     """
 
-    add_requested = Signal(str)            # spec name
-    edit_template_requested = Signal(str)  # spec name
+    add_requested = Signal(str)             # spec name
+    edit_template_requested = Signal(str)   # spec name
+    delete_requested = Signal(str)          # spec name
+    refresh_requested = Signal()
+    category_color_changed = Signal(str, tuple)  # category, (r, g, b)
 
     def __init__(self, library: NodeLibrary, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.library = library
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
+
+        header = QHBoxLayout()
+        header.addWidget(QLabel("<b>Notebook Library</b>"))
+        header.addStretch(1)
+        refresh_btn = QToolButton()
+        refresh_btn.setText("⟳")
+        refresh_btn.setToolTip("Refresh — detect newly added notebooks/specs")
+        refresh_btn.clicked.connect(self.refresh_requested.emit)
+        header.addWidget(refresh_btn)
+        layout.addLayout(header)
+
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabel("Notebook Library")
+        self.tree.setHeaderHidden(True)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._context_menu)
         self.tree.itemDoubleClicked.connect(self._on_double_click)
         layout.addWidget(self.tree)
         self.refresh()
 
     def refresh(self) -> None:
+        from nodeflow.gui.theme import color_for_category
+
         self.tree.clear()
         for category, specs in self.library.by_category().items():
             cat_item = QTreeWidgetItem([category])
             cat_item.setFlags(cat_item.flags() & ~Qt.ItemIsSelectable)
+            cat_item.setBackground(0, QBrush(QColor(*color_for_category(category))))
             self.tree.addTopLevelItem(cat_item)
             for spec in specs:
                 child = QTreeWidgetItem([""])
@@ -72,22 +94,45 @@ class LibraryPanel(QWidget):
         h.setSpacing(2)
         h.addWidget(QLabel(spec_name))
         h.addStretch(1)
-        add_btn = QToolButton()
-        add_btn.setText("+")
-        add_btn.setToolTip(f"Add {spec_name} to the workflow")
-        add_btn.clicked.connect(lambda: self.add_requested.emit(spec_name))
-        edit_btn = QToolButton()
-        edit_btn.setText("…")
-        edit_btn.setToolTip(f"Edit the {spec_name} notebook template")
-        edit_btn.clicked.connect(lambda: self.edit_template_requested.emit(spec_name))
-        h.addWidget(add_btn)
-        h.addWidget(edit_btn)
+        for text, tip, slot in (
+            ("+", f"Add {spec_name} to the workflow",
+             lambda: self.add_requested.emit(spec_name)),
+            ("…", f"Edit the {spec_name} notebook template",
+             lambda: self.edit_template_requested.emit(spec_name)),
+            ("🗑", f"Delete {spec_name} from the library",
+             lambda: self.delete_requested.emit(spec_name)),
+        ):
+            btn = QToolButton()
+            btn.setText(text)
+            btn.setToolTip(tip)
+            btn.clicked.connect(slot)
+            h.addWidget(btn)
         return row
 
     def _on_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
         spec_name = item.data(0, Qt.UserRole)
         if spec_name:
             self.add_requested.emit(spec_name)
+
+    def _context_menu(self, pos) -> None:
+        item = self.tree.itemAt(pos)
+        if item is None or item.parent() is not None:
+            return  # only category (top-level) rows have a context menu
+        category = item.text(0)
+        menu = QMenu(self)
+        menu.addAction("Set Colour…", lambda: self._pick_color(category))
+        menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def _pick_color(self, category: str) -> None:
+        from PySide6.QtWidgets import QColorDialog
+
+        from nodeflow.gui.theme import color_for_category
+
+        current = QColor(*color_for_category(category))
+        color = QColorDialog.getColor(current, self, f"Colour for '{category}'")
+        if color.isValid():
+            self.category_color_changed.emit(category, (color.red(), color.green(), color.blue()))
+            self.refresh()
 
 
 class FilesPanel(QWidget):
