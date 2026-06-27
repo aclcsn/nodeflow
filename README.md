@@ -20,9 +20,9 @@ outputs rather than reading and writing files directly.
 - **Node management.** Add, rename, and remove nodes directly on the canvas.
 - **Caching.** A node is re-run only when its code, parameters, or inputs change; otherwise its
   previous result is reused.
-- **Built-in templates.** A starter set covers data loading, cleaning, splitting, model training
-  (Logistic Regression, Random Forest, XGBoost), SHAP, evaluation, reporting, and a
-  column-metadata helper.
+- **Example template.** A built-in **Sample Template** demonstrates one input and one output of
+  every data type, with commented examples of how to read and produce each — a starting point for
+  writing your own nodes.
 - **Output previews.** Tables, figures, metrics, and HTML reports can be viewed within the
   application.
 - **Major nodes.** A group of nodes can be collapsed into a single container node and expanded
@@ -39,24 +39,28 @@ outputs rather than reading and writing files directly.
 
 ## Installation
 
-### Quick start (macOS)
+### Quick start with the launcher scripts
 
-Two scripts sit at the top of the project folder:
+Ready-made scripts sit at the top of the project folder — one to install, one to launch.
 
-1. **install.command** — creates a virtual environment, installs NodeFlow and its dependencies,
-   and registers the notebook kernel.
-2. **start.command** — launches NodeFlow.
-
-Double-click **install.command** in Finder and wait for it to finish, then double-click
-**start.command** to open the application. You can also run them from a terminal:
+**macOS** — double-click **mac-install.command** in Finder and wait for it to finish, then
+double-click **mac-start.command**. You can also run them from a terminal:
 
 ```bash
-./install.command   # first-time setup, and again after updating the code
-./start.command     # launches NodeFlow
+./mac-install.command   # first-time setup, and again after updating the code
+./mac-start.command     # launches NodeFlow
 ```
 
 The first time you open a script, macOS may ask you to confirm; choose Open. If a script is not
-marked executable, run `chmod +x install.command start.command` once.
+marked executable, run `chmod +x mac-install.command mac-start.command` once.
+
+**Windows** — double-click **win-install.bat**, then **win-start.bat** (or run them from a
+Command Prompt in the project folder):
+
+```bat
+win-install.bat   :: first-time setup, and again after updating the code
+win-start.bat     :: launches NodeFlow
+```
 
 ### Manual installation (any platform)
 
@@ -271,8 +275,8 @@ takes a `choices` list of allowed values).
 
 ### Reusable column metadata
 Sometimes the same field has a different column name in each dataset, yet downstream notebooks
-should treat it the same way. The built-in **Define Columns** node (in the *Metadata* category)
-handles this. It outputs a dictionary that maps roles to the actual column names:
+should treat it the same way. Build a small node that outputs a dictionary mapping roles to the
+actual column names:
 
 ```python
 # notebooks/define_columns.ipynb
@@ -281,7 +285,7 @@ from nodeflow import outputs, params
 columns = {"target": params.target_col}
 if params.time_col:
     columns["time"] = params.time_col
-outputs.columns = columns
+outputs.columns = columns   # declare this output as type `dict`
 ```
 
 A downstream node reads that dictionary and refers to columns by role rather than by literal name:
@@ -294,8 +298,8 @@ col = inputs.columns          # e.g. {"target": "y", "time": "ts"}
 y   = df[col["target"]]       # train(df, target=col["target"]), etc.
 ```
 
-Connect the `columns` output of Define Columns to a `columns` input on your node. This uses the
-ordinary `dict` type; no special data type is required.
+Connect the `columns` output to a `columns` input on your node. This uses the ordinary `dict`
+type; no special data type is required.
 
 ### A shorter route
 To adapt an existing node rather than start from scratch, right-click a built-in node and choose

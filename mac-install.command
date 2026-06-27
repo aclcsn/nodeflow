@@ -2,7 +2,7 @@
 #
 # NodeFlow — one-time installer / updater.
 #
-# Double-click this file in Finder, or run "./install.command" in a terminal.
+# Double-click this file in Finder, or run "./mac-install.command" in a terminal.
 # It creates a virtual environment, installs NodeFlow and its dependencies, and
 # registers the notebook kernel. Running it again after updating the code is
 # safe and brings the install up to date.
@@ -39,4 +39,4 @@ python -m ipykernel install --sys-prefix --name nodeflow --display-name "NodeFlo
 
 echo ""
 echo "Installation complete."
-echo "Launch NodeFlow with start.command (double-click it in Finder, or run ./start.command)."
+echo "Launch NodeFlow with mac-start.command (double-click it in Finder, or run ./mac-start.command)."

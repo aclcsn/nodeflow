@@ -1,9 +1,9 @@
 """Built-in node templates.
 
-Each template is materialized into a project as a YAML node spec + a one-cell
-notebook wired to the SDK. Notebooks degrade gracefully when an optional library
-is missing (XGBoost → sklearn GradientBoosting; SHAP → feature importances) so a
-freshly installed project always executes end-to-end.
+A single example template — **Sample Template** — is materialized into a project
+as a YAML node spec + a one-cell notebook wired to the SDK. It declares one input
+and one output of every NodeFlow port type and shows, with comments, how to read
+each input type and how to produce each output type.
 
 Public API::
 
@@ -33,331 +33,118 @@ class TemplateDef:
     description: str = ""
 
 
-# --------------------------------------------------------------------------- #
-# Template definitions
-# --------------------------------------------------------------------------- #
-_IMPORT_CSV = TemplateDef(
-    file="import_csv",
-    name="Import CSV",
-    category="Input",
-    description="Load a CSV by path, or synthesize a sample classification dataset.",
-    outputs={"raw": "dataframe"},
-    params={
-        "path": {"type": "str", "default": ""},
-        "n_samples": {"type": "int", "default": 300},
-        "n_features": {"type": "int", "default": 6},
-    },
-    code="""
-import pandas as pd
-from nodeflow import outputs, params
-
-path = params.get("path", "")
-if path:
-    df = pd.read_csv(path)
-else:
-    from sklearn.datasets import make_classification
-    X, y = make_classification(
-        n_samples=int(params.get("n_samples", 300)),
-        n_features=int(params.get("n_features", 6)),
-        n_informative=4, random_state=0,
-    )
-    df = pd.DataFrame(X, columns=[f"f{i}" for i in range(X.shape[1])])
-    df["target"] = y
-outputs.raw = df
-""".strip(),
-)
-
-_SQL_QUERY = TemplateDef(
-    file="sql_query",
-    name="SQL Query",
-    category="Input",
-    description="Run a SQL query against a SQLite database, or synthesize sample rows.",
-    outputs={"result": "dataframe"},
-    params={
-        "connection": {"type": "str", "default": ""},
-        "query": {"type": "str", "default": ""},
-    },
-    code="""
-import pandas as pd
-from nodeflow import outputs, params
-
-conn = params.get("connection", "")
-query = params.get("query", "")
-if conn and query:
-    import sqlite3
-    with sqlite3.connect(conn) as c:
-        df = pd.read_sql_query(query, c)
-else:
-    df = pd.DataFrame({"id": [1, 2, 3], "value": [10, 20, 30]})
-outputs.result = df
-""".strip(),
-)
-
-_DATA_CLEANING = TemplateDef(
-    file="data_cleaning",
-    name="Data Cleaning",
-    category="Cleaning",
-    description="Drop missing values and duplicate rows.",
-    inputs={"raw": ("dataframe", True)},
-    outputs={"clean": "dataframe"},
-    params={
-        "dropna": {"type": "bool", "default": True},
-        "drop_duplicates": {"type": "bool", "default": True},
-    },
-    code="""
-from nodeflow import inputs, outputs, params
-
-df = inputs.raw.copy()
-if params.get("dropna", True):
-    df = df.dropna()
-if params.get("drop_duplicates", True):
-    df = df.drop_duplicates()
-outputs.clean = df.reset_index(drop=True)
-""".strip(),
-)
-
-_SPLIT_DATA = TemplateDef(
-    file="split_data",
-    name="Split Data",
-    category="Transform",
-    description="Train/test split (stratified on the target when present).",
-    inputs={"data": ("dataframe", True)},
-    outputs={"train_df": "dataframe", "test_df": "dataframe"},
-    params={
-        "target": {"type": "str", "default": "target"},
-        "test_size": {"type": "float", "default": 0.25},
-    },
-    code="""
-from nodeflow import inputs, outputs, params
-from sklearn.model_selection import train_test_split
-
-df = inputs.data
-target = params.get("target", "target")
-strat = df[target] if target in df.columns else None
-train_df, test_df = train_test_split(
-    df, test_size=float(params.get("test_size", 0.25)), random_state=0, stratify=strat
-)
-outputs.train_df = train_df.reset_index(drop=True)
-outputs.test_df = test_df.reset_index(drop=True)
-""".strip(),
-)
+# Every NodeFlow port type. The Sample Template exposes one input and one output
+# of each, so a fresh project shows how to read and produce them all.
+ALL_PORT_TYPES = [
+    "dataframe", "sklearn_model", "figure", "ndarray",
+    "dict", "list", "text", "html", "path",
+]
 
 
-def _classifier_code(builder: str) -> str:
-    return f"""
-from nodeflow import inputs, outputs, params
-from sklearn.metrics import accuracy_score
+_SAMPLE_CODE = '''
+"""Sample Template — one input and one output of every NodeFlow type.
 
-df = inputs.train_df
-target = params.get("target", "target")
-X = df.drop(columns=[target])
-y = df[target]
-{builder}
-model.fit(X, y)
-outputs.model = model
-outputs.metrics = {{"train_accuracy": float(accuracy_score(y, model.predict(X)))}}
-""".strip()
-
-
-_LOGISTIC = TemplateDef(
-    file="logistic_regression",
-    name="Logistic Regression",
-    category="Modeling",
-    description="Train a logistic regression classifier.",
-    inputs={"train_df": ("dataframe", True)},
-    outputs={"model": "sklearn_model", "metrics": "dict"},
-    params={"target": {"type": "str", "default": "target"}, "max_iter": {"type": "int", "default": 1000}},
-    code=_classifier_code(
-        "from sklearn.linear_model import LogisticRegression\n"
-        "model = LogisticRegression(max_iter=int(params.get('max_iter', 1000)))"
-    ),
-)
-
-_RANDOM_FOREST = TemplateDef(
-    file="random_forest",
-    name="Random Forest",
-    category="Modeling",
-    description="Train a random forest classifier.",
-    inputs={"train_df": ("dataframe", True)},
-    outputs={"model": "sklearn_model", "metrics": "dict"},
-    params={
-        "target": {"type": "str", "default": "target"},
-        "n_estimators": {"type": "int", "default": 100},
-        "max_depth": {"type": "int", "default": 5},
-    },
-    code=_classifier_code(
-        "from sklearn.ensemble import RandomForestClassifier\n"
-        "model = RandomForestClassifier(n_estimators=int(params.get('n_estimators', 100)),"
-        " max_depth=int(params.get('max_depth', 5)), random_state=0)"
-    ),
-)
-
-_XGBOOST = TemplateDef(
-    file="xgboost_model",
-    name="XGBoost",
-    category="Modeling",
-    description="Train an XGBoost classifier (falls back to sklearn GradientBoosting).",
-    inputs={"train_df": ("dataframe", True)},
-    outputs={"model": "sklearn_model", "metrics": "dict"},
-    params={
-        "target": {"type": "str", "default": "target"},
-        "n_estimators": {"type": "int", "default": 100},
-        "max_depth": {"type": "int", "default": 3},
-    },
-    code=_classifier_code(
-        "try:\n"
-        "    from xgboost import XGBClassifier\n"
-        "    model = XGBClassifier(n_estimators=int(params.get('n_estimators', 100)),"
-        " max_depth=int(params.get('max_depth', 3)), use_label_encoder=False,"
-        " eval_metric='logloss', random_state=0)\n"
-        "except Exception:\n"
-        "    from sklearn.ensemble import GradientBoostingClassifier\n"
-        "    model = GradientBoostingClassifier(n_estimators=int(params.get('n_estimators', 100)),"
-        " max_depth=int(params.get('max_depth', 3)), random_state=0)"
-    ),
-)
-
-_SHAP = TemplateDef(
-    file="shap_explain",
-    name="SHAP",
-    category="Explainability",
-    description="Explain a model (SHAP if available, else feature importances).",
-    inputs={"model": ("sklearn_model", True), "data": ("dataframe", True)},
-    outputs={"summary": "dataframe", "figure": "figure"},
-    params={"target": {"type": "str", "default": "target"}},
-    code="""
+All inputs are optional, so this node also runs on its own. Each block below
+shows how to READ an input of a given type (when one is connected) and how to
+PRODUCE an output of that type. The comment above each line explains the type.
+"""
+import matplotlib
+matplotlib.use("Agg")  # render figures without a display
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.figure import Figure
-from nodeflow import inputs, outputs, params
+from sklearn.linear_model import LogisticRegression
 
-model = inputs.model
-df = inputs.data
-target = params.get("target", "target")
-X = df.drop(columns=[target]) if target in df.columns else df
+from nodeflow import inputs, outputs
 
-importance = None
-try:
-    import shap
-    explainer = shap.Explainer(model, X)
-    values = explainer(X)
-    importance = np.abs(values.values).mean(axis=0)
-except Exception:
-    if hasattr(model, "feature_importances_"):
-        importance = np.asarray(model.feature_importances_)
-    elif hasattr(model, "coef_"):
-        importance = np.abs(np.ravel(model.coef_))
-    else:
-        importance = np.zeros(X.shape[1])
+# ============================================================================
+# READING INPUTS  (each is optional; inputs.get(name) is None when unconnected)
+# ============================================================================
 
-summary = pd.DataFrame({"feature": list(X.columns), "importance": importance})
-summary = summary.sort_values("importance", ascending=False).reset_index(drop=True)
-outputs.summary = summary
+# dataframe: a pandas DataFrame (stored as Parquet). Use it like any DataFrame —
+# select columns, filter rows, compute statistics, etc.
+in_dataframe = inputs.get("in_dataframe")
 
-fig = Figure(figsize=(5, 3))
-ax = fig.add_subplot(1, 1, 1)
-ax.barh(summary["feature"][::-1], summary["importance"][::-1])
-ax.set_title("Feature importance")
-outputs.figure = fig
-""".strip(),
-)
+# sklearn_model: a fitted scikit-learn estimator (stored via joblib). Score new
+# data with in_sklearn_model.predict(X).
+in_sklearn_model = inputs.get("in_sklearn_model")
 
-_EVALUATION = TemplateDef(
-    file="evaluation",
-    name="Evaluation",
-    category="Evaluation",
-    description="Evaluate a model on a test set; emit metrics + an HTML report.",
-    inputs={"model": ("sklearn_model", True), "test_df": ("dataframe", True)},
-    outputs={"metrics": "dict", "report": "html"},
-    params={"target": {"type": "str", "default": "target"}},
-    code="""
-from nodeflow import inputs, outputs, params
-from sklearn.metrics import accuracy_score, f1_score, classification_report
+# figure: the rendered image of a Matplotlib figure, returned as a NumPy RGBA
+# array (it is an image, no longer an editable Figure).
+in_figure = inputs.get("in_figure")
 
-df = inputs.test_df
-model = inputs.model
-target = params.get("target", "target")
-X = df.drop(columns=[target])
-y = df[target]
-pred = model.predict(X)
+# ndarray: a NumPy array (stored as .npy). Use it for numeric or tensor data.
+in_ndarray = inputs.get("in_ndarray")
 
-acc = float(accuracy_score(y, pred))
-f1 = float(f1_score(y, pred, average="weighted"))
-outputs.metrics = {"accuracy": acc, "f1": f1}
-outputs.report = (
-    "<h2>Evaluation</h2>"
-    f"<p><b>Accuracy:</b> {acc:.3f}</p>"
-    f"<p><b>F1 (weighted):</b> {f1:.3f}</p>"
-    f"<pre>{classification_report(y, pred)}</pre>"
-)
-""".strip(),
-)
+# dict: a JSON-style mapping (stored as JSON). Look values up by key, e.g. a
+# metrics dict or a column mapping like {"target": "y"}.
+in_dict = inputs.get("in_dict")
 
-_REPORT = TemplateDef(
-    file="report",
-    name="Report",
-    category="Report",
-    description="Combine up to three model evaluations into one HTML report.",
-    inputs={
-        "metrics_a": ("dict", False),
-        "metrics_b": ("dict", False),
-        "metrics_c": ("dict", False),
-    },
-    outputs={"report": "html"},
-    params={
-        "label_a": {"type": "str", "default": "Model A"},
-        "label_b": {"type": "str", "default": "Model B"},
-        "label_c": {"type": "str", "default": "Model C"},
-    },
-    code="""
-from nodeflow import inputs, outputs, params
+# list: a JSON-style list of values (stored as JSON). Iterate over it.
+in_list = inputs.get("in_list")
 
-rows = []
-for key, label_key in [("metrics_a", "label_a"), ("metrics_b", "label_b"), ("metrics_c", "label_c")]:
-    m = inputs.get(key)
-    if m:
-        label = params.get(label_key, key)
-        cells = "".join(f"<td>{k}={v:.3f}</td>" if isinstance(v, float) else f"<td>{k}={v}</td>"
-                        for k, v in m.items())
-        rows.append(f"<tr><th>{label}</th>{cells}</tr>")
+# text: a plain string (stored as .txt) — free-form notes, a SQL script, etc.
+in_text = inputs.get("in_text")
 
-outputs.report = "<h1>Model Comparison Report</h1><table border='1'>" + "".join(rows) + "</table>"
-""".strip(),
-)
+# html: an HTML string (stored as .html) — a rendered report or table.
+in_html = inputs.get("in_html")
+
+# path: a filesystem path as a string. Hand it to your own loader, for example
+# pd.read_csv(in_path) or db.read_csv(in_path, sep=";").
+in_path = inputs.get("in_path")
+
+# ============================================================================
+# PRODUCING OUTPUTS  (assign to outputs.<name>; the port type controls storage)
+# ============================================================================
+
+# dataframe -> Parquet. Assign any pandas DataFrame.
+outputs.out_dataframe = pd.DataFrame({"x": [1, 2, 3], "y": [4.0, 5.0, 6.0]})
+
+# sklearn_model -> joblib. Assign any fitted estimator (here a tiny classifier).
+outputs.out_sklearn_model = LogisticRegression().fit([[0], [1], [2], [3]], [0, 0, 1, 1])
+
+# figure -> PNG. Assign a Matplotlib Figure; NodeFlow saves it as an image.
+_fig, _ax = plt.subplots()
+_ax.plot([1, 2, 3], [3, 1, 2], marker="o")
+_ax.set_title("Sample figure")
+outputs.out_figure = _fig
+
+# ndarray -> .npy. Assign a NumPy array of any shape.
+outputs.out_ndarray = np.arange(12).reshape(3, 4)
+
+# dict -> JSON. Assign a dictionary of JSON-serializable values.
+outputs.out_dict = {"accuracy": 0.91, "label": "demo"}
+
+# list -> JSON. Assign a list of JSON-serializable values.
+outputs.out_list = [1, 2, 3, "four"]
+
+# text -> .txt. Assign a string.
+outputs.out_text = "This is a plain-text output from the Sample Template."
+
+# html -> .html. Assign an HTML string; it renders in the Outputs panel.
+outputs.out_html = "<h2>Sample report</h2><p>Hello from the Sample Template.</p>"
+
+# path -> a path string. Connect this to a reader node's path input so the
+# reader can open the file with its own loader.
+outputs.out_path = "sample.csv"
+'''.strip()
 
 
-_DEFINE_COLUMNS = TemplateDef(
-    file="define_columns",
-    name="Define Columns",
-    category="Metadata",
+_SAMPLE_TEMPLATE = TemplateDef(
+    file="sample_template",
+    name="Sample Template",
+    category="Examples",
     description=(
-        "Map roles (target, time, id, ...) to the actual column names in your data, "
-        "so downstream notebooks can refer to them generically."
+        "Example node exposing one input and one output of every NodeFlow type, "
+        "with commented examples of how to read and produce each."
     ),
-    outputs={"columns": "dict"},
-    params={
-        "target_col": {"type": "str", "default": "target"},
-        "time_col": {"type": "str", "default": ""},
-        "id_col": {"type": "str", "default": ""},
-    },
-    code="""
-from nodeflow import outputs, params
-
-columns = {"target": params.get("target_col", "")}
-if params.get("time_col"):
-    columns["time"] = params.get("time_col")
-if params.get("id_col"):
-    columns["id"] = params.get("id_col")
-outputs.columns = columns
-""".strip(),
+    inputs={f"in_{t}": (t, False) for t in ALL_PORT_TYPES},   # all optional
+    outputs={f"out_{t}": t for t in ALL_PORT_TYPES},
+    code=_SAMPLE_CODE,
 )
 
 
-TEMPLATE_DEFS: list[TemplateDef] = [
-    _IMPORT_CSV, _SQL_QUERY, _DATA_CLEANING, _SPLIT_DATA,
-    _LOGISTIC, _RANDOM_FOREST, _XGBOOST, _SHAP, _EVALUATION, _REPORT,
-    _DEFINE_COLUMNS,
-]
+TEMPLATE_DEFS: list[TemplateDef] = [_SAMPLE_TEMPLATE]
 
 
 # --------------------------------------------------------------------------- #
