@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
 
         self.project_dir = Path(project_dir) if project_dir else Path.cwd()
         self.library = library or NodeLibrary()
+        self._load_category_colors()  # before any nodes are created/coloured
 
         self.artifacts = ArtifactManager(self.project_dir / "runs")
         self.engine = ExecutionEngine(self.artifacts, base_dir=self.project_dir)
@@ -601,10 +602,47 @@ class MainWindow(QMainWindow):
 
     # -- library: refresh / delete / category colour (Features 2, 4, 5) ----
     def refresh_library(self) -> None:
-        """Rescan the project's specs folder so newly added nodes appear."""
+        """Rescan the specs folder, re-apply edited specs to placed nodes."""
         self.library.load_dir(self.project_dir / "specs")
+        updated = self._reconcile_board_with_library()
         self.library_panel.refresh()
-        self.log(f"Library refreshed ({len(self.library)} nodes).")
+        self._ensure_node_menu()
+        msg = f"Library refreshed ({len(self.library)} nodes)"
+        if updated:
+            msg += f"; updated {updated} placed node(s)"
+        self.log(msg + ".")
+
+    def _reconcile_board_with_library(self) -> int:
+        """Re-apply edited specs to placed nodes and drop now-invalid connections.
+
+        A placed node whose spec name matches a (re)loaded library spec adopts the
+        new ports/parameters, unless it uses its own per-node notebook (an
+        ``Edit Notebook`` copy), which is left untouched.
+        """
+        model = self.canvas.model
+        updated = 0
+        for inst in model.nodes.values():
+            name = inst.spec.name
+            if name not in self.library:
+                continue
+            new_spec = self.library.get(name)
+            if inst.spec.notebook == new_spec.notebook and new_spec != inst.spec:
+                kept = {k: v for k, v in inst.params.items() if k in new_spec.parameters}
+                inst.params = {**new_spec.default_params(), **kept}
+                inst.spec = new_spec
+                updated += 1
+        # Drop connections whose ports no longer exist after the spec change.
+        model.connections = [
+            c
+            for c in model.connections
+            if c.source in model.nodes
+            and c.target in model.nodes
+            and c.source_port in model.nodes[c.source].spec.outputs
+            and c.target_port in model.nodes[c.target].spec.inputs
+        ]
+        if updated:
+            self.canvas.rebuild_view()
+        return updated
 
     def delete_library_node(self, spec_name: str) -> None:
         from PySide6.QtWidgets import QMessageBox
@@ -639,7 +677,39 @@ class MainWindow(QMainWindow):
 
         set_category_color(category, tuple(rgb))
         self.canvas.recolor_category(category, tuple(rgb))
+        self._save_category_colors()
         self.log(f"Set colour for category '{category}'.")
+
+    @property
+    def _colors_path(self) -> Path:
+        return self.project_dir / "category_colors.json"
+
+    def _load_category_colors(self) -> None:
+        import json
+
+        from nodeflow.gui.theme import set_category_color
+
+        try:
+            data = json.loads(self._colors_path.read_text())
+        except Exception:
+            return
+        for category, rgb in data.items():
+            try:
+                set_category_color(category, tuple(rgb))
+            except Exception:
+                continue
+
+    def _save_category_colors(self) -> None:
+        import json
+
+        from nodeflow.gui.theme import category_overrides
+
+        try:
+            self._colors_path.write_text(
+                json.dumps({c: list(rgb) for c, rgb in category_overrides().items()}, indent=2)
+            )
+        except Exception:
+            pass
 
     def save_workflow_dialog(self) -> None:
         from PySide6.QtWidgets import QFileDialog

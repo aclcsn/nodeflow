@@ -28,6 +28,11 @@ def set_category_color(category: str, rgb: tuple[int, int, int]) -> None:
     _CATEGORY_OVERRIDES[category] = tuple(rgb)
 
 
+def category_overrides() -> dict[str, tuple[int, int, int]]:
+    """The user-chosen category colours (for persistence)."""
+    return dict(_CATEGORY_OVERRIDES)
+
+
 def color_for_category(category: str) -> tuple[int, int, int]:
     if category in _CATEGORY_OVERRIDES:
         return _CATEGORY_OVERRIDES[category]

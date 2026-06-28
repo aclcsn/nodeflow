@@ -8,6 +8,8 @@ category.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 
 from NodeGraphQt import BaseNode, NodeBaseWidget
@@ -53,12 +55,28 @@ class _RemoveButtonWidget(NodeBaseWidget):
             pass
 
 
+def _structure_hash(spec: NodeSpec) -> str:
+    """A short hash of a spec's ports/params.
+
+    Two specs with the same name but different inputs/outputs/parameters hash
+    differently, so an edited spec produces a *new* node class instead of reusing
+    the cached one (which is what made port edits not show up after a refresh).
+    """
+    payload = {
+        "inputs": [[n, p.type, p.required] for n, p in spec.inputs.items()],
+        "outputs": [[n, p.type] for n, p in spec.outputs.items()],
+        "params": [[n, str(p.type)] for n, p in spec.parameters.items()],
+    }
+    blob = json.dumps(payload)  # insertion order preserved, so re-ordering also counts
+    return hashlib.md5(blob.encode()).hexdigest()[:8]
+
+
 def class_name_for(spec: NodeSpec) -> str:
-    """A valid, stable Python class name derived from the spec name."""
+    """A valid Python class name derived from the spec name and its structure."""
     cleaned = re.sub(r"\W+", "_", spec.name).strip("_") or "Node"
     if cleaned[0].isdigit():
         cleaned = f"N_{cleaned}"
-    return f"NF_{cleaned}"
+    return f"NF_{cleaned}_{_structure_hash(spec)}"
 
 
 def node_type_id(spec: NodeSpec) -> str:
