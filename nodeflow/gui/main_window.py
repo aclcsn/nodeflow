@@ -574,13 +574,30 @@ class MainWindow(QMainWindow):
         )
         self.log(summary)
         for nid in report.failed:
-            outcome = report.outcomes[nid]
-            err = outcome.result.error if outcome.result else "unknown error"
-            self.log(f"  ✗ {nid}: {err}")
+            self._log_failure(nid, report.outcomes[nid])
+        for nid in report.skipped:
+            reason = report.outcomes[nid].reason or "an upstream node failed or was skipped"
+            self.log(f"  ⤼ {nid} skipped: {reason}")
         # Refresh the outputs panel for the currently selected node.
         ids = self.canvas.selected_node_ids()
         if ids:
             self._refresh_outputs(ids[0])
+
+    def _log_failure(self, node_id: str, outcome) -> None:
+        """Log a failed node's actual error and the code where it failed."""
+        # NB: ExecutionResult.__bool__ reflects success, so test against None.
+        result = getattr(outcome, "result", None)
+        error = (
+            (result.error if result is not None and result.error else None)
+            or outcome.reason
+            or "unknown error"
+        )
+        self.log(f"  ✗ {node_id} failed: {error}")
+        # The kernel traceback includes the offending cell's source, so the user
+        # can see exactly which line of code raised.
+        traceback = result.traceback if result is not None else None
+        if traceback:
+            self.log(traceback.rstrip())
 
     def _on_run_failed(self, message: str) -> None:
         self.statusBar().showMessage("Error")

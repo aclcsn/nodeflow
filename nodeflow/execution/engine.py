@@ -18,6 +18,7 @@ Notebook code contains **no file paths** — everything flows through the contex
 from __future__ import annotations
 
 import os
+import re
 import time
 import traceback as _tb
 from dataclasses import dataclass, field
@@ -32,6 +33,14 @@ from nodeflow.serialization.registry import SerializerRegistry
 
 CONTEXT_NAME = "_context.json"
 EXECUTED_NOTEBOOK_NAME = "executed.ipynb"
+
+# Kernel tracebacks come back with ANSI colour codes; strip them so the stored
+# error/traceback reads cleanly in logs.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _clean(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 class ExecutionError(RuntimeError):
@@ -143,12 +152,13 @@ class ExecutionEngine:
             )
         except PapermillExecutionError as exc:
             success = False
-            error = f"{exc.ename}: {exc.evalue}"
-            tb = "\n".join(exc.traceback) if getattr(exc, "traceback", None) else str(exc)
+            error = _clean(f"{exc.ename}: {exc.evalue}")
+            raw_tb = "\n".join(exc.traceback) if getattr(exc, "traceback", None) else str(exc)
+            tb = _clean(raw_tb)
         except Exception as exc:  # kernel start failure, timeout, etc.
             success = False
-            error = str(exc)
-            tb = _tb.format_exc()
+            error = _clean(str(exc))
+            tb = _clean(_tb.format_exc())
         finally:
             duration = time.perf_counter() - start
             if previous_env is None:

@@ -26,7 +26,7 @@ from nodeflow.artifacts.manager import ArtifactManager, Run
 from nodeflow.core.artifact import ArtifactRef
 from nodeflow.core.graph import WorkflowGraph
 from nodeflow.execution.cache import CacheEngine
-from nodeflow.execution.engine import ExecutionEngine, ExecutionResult
+from nodeflow.execution.engine import ExecutionEngine, ExecutionError, ExecutionResult
 
 
 class NodeStatus(str, Enum):
@@ -182,9 +182,16 @@ class DagRunner:
                 continue
 
             node = self.graph.node(node_id)
-            result = self.engine.execute_node(
-                node.spec, run, node_id, inputs=inputs, params=node.params
-            )
+            try:
+                result = self.engine.execute_node(
+                    node.spec, run, node_id, inputs=inputs, params=node.params
+                )
+            except ExecutionError as exc:
+                # Setup failures (missing notebook, missing required inputs) become a
+                # FAILED outcome carrying the message instead of crashing the run.
+                result = ExecutionResult(
+                    node_id=node_id, run_id=run.run_id, success=False, error=str(exc)
+                )
             status = NodeStatus.SUCCESS if result.success else NodeStatus.FAILED
             report.record(NodeOutcome(node_id, status, result=result))
             if result.success:
